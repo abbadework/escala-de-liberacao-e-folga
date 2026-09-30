@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Operacional - Escala & ABS</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- SheetJS para ler Excel (.xlsx) no navegador -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800 min-h-screen">
+
+    <!-- Navbar -->
+    <header class="bg-slate-900 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 p-2.5 rounded-lg text-white">
+                    <i class="fa-solid fa-chart-pie text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide">PAINEL DE ESCALA E ABSENTEÍSMO</h1>
+                    <p class="text-xs text-gray-400">LOG20 Logística • Atualização via Upload</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <!-- Botão de Upload de Planilha -->
+                <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow flex items-center space-x-2 transition-all">
+                    <i class="fa-solid fa-file-excel text-sm"></i>
+                    <span>Carregar Nova Planilha (.xlsx)</span>
+                    <input type="file" id="excelUpload" accept=".xlsx, .xls" class="hidden" onchange="handleFileUpload(event)">
+                </label>
+
+                <!-- Botões de Navegação de Abas -->
+                <div class="flex bg-slate-800 p-1 rounded-lg space-x-1">
+                    <button onclick="switchTab('general')" id="tab-general" class="tab-btn px-3 py-2 text-xs font-semibold rounded-md transition-all bg-blue-600 text-white shadow">
+                        <i class="fa-solid fa-gauge-high mr-1"></i> KPIs
+                    </button>
+                    <button onclick="switchTab('nominal')" id="tab-nominal" class="tab-btn px-3 py-2 text-xs font-semibold rounded-md transition-all text-gray-400 hover:text-white">
+                        <i class="fa-solid fa-users text-xs mr-1"></i> Nominal
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- Barra de Controle (Filtros por Função) -->
+        <section class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center space-x-2">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Filtrar Categoria:</span>
+                <div id="filter-buttons-container" class="flex flex-wrap gap-1.5">
+                    <button onclick="filterFunction('TODOS')" id="btn-TODOS" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all bg-slate-900 text-white border-slate-900 shadow-sm">
+                        Todos
+                    </button>
+                    <button onclick="filterFunction('MOTORISTA')" id="btn-MOTORISTA" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100">
+                        Motoristas
+                    </button>
+                    <button onclick="filterFunction('VAN')" id="btn-VAN" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100">
+                        Vans
+                    </button>
+                    <button onclick="filterFunction('AJUDANTE')" id="btn-AJUDANTE" class="filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all bg-gray-50 text-gray-700 border-gray-300 hover:bg-gray-100">
+                        Ajudantes
+                    </button>
+                </div>
+            </div>
+
+            <!-- Taxa Geral -->
+            <div class="flex items-center space-x-3 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
+                <span class="text-xs text-gray-500 font-medium">Taxa Geral de ABS:</span>
+                <span id="kpi-abs-rate" class="text-sm font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-200">0.0%</span>
+            </div>
+        </section>
+
+        <!-- CARDS DE KPIs PRINCIPAIS -->
+        <section class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
+                <div class="text-xs font-medium text-gray-500">Efetivo Filtrado</div>
+                <div id="kpi-count" class="text-2xl font-bold text-slate-800 mt-1">0</div>
+                <div class="text-[10px] text-gray-400 mt-1">Colaboradores</div>
+                <div class="absolute -right-2 -bottom-2 opacity-10 text-slate-900 text-5xl"><i class="fa-solid fa-users"></i></div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-green-500 relative overflow-hidden">
+                <div class="text-xs font-medium text-gray-500">Liberações</div>
+                <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="kpi-liberacao" class="text-2xl font-bold text-green-600">0</span>
+                    <span id="pct-liberacao" class="text-xs font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded">0%</span>
+                </div>
+                <div class="text-[10px] text-gray-400 mt-1">Total de ocorrências</div>
+                <div class="absolute -right-2 -bottom-2 opacity-10 text-green-600 text-5xl"><i class="fa-solid fa-circle-check"></i></div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-amber-500 relative overflow-hidden">
+                <div class="text-xs font-medium text-gray-500">Folgas</div>
+                <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="kpi-folga" class="text-2xl font-bold text-amber-600">0</span>
+                    <span id="pct-folga" class="text-xs font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">0%</span>
+                </div>
+                <div class="text-[10px] text-gray-400 mt-1">Total de folgas</div>
+                <div class="absolute -right-2 -bottom-2 opacity-10 text-amber-600 text-5xl"><i class="fa-solid fa-mug-hot"></i></div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-red-500 relative overflow-hidden">
+                <div class="text-xs font-medium text-gray-500">Absenteísmo (ABS)</div>
+                <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="kpi-abs" class="text-2xl font-bold text-red-600">0</span>
+                    <span id="pct-abs" class="text-xs font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded">0%</span>
+                </div>
+                <div class="text-[10px] text-gray-400 mt-1">Total de faltas</div>
+                <div class="absolute -right-2 -bottom-2 opacity-10 text-red-600 text-5xl"><i class="fa-solid fa-user-xmark"></i></div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-purple-500 relative overflow-hidden col-span-2 md:col-span-1">
+                <div class="text-xs font-medium text-gray-500">Suspensões</div>
+                <div class="flex items-baseline space-x-2 mt-1">
+                    <span id="kpi-suspensao" class="text-2xl font-bold text-purple-600">0</span>
+                    <span id="pct-suspensao" class="text-xs font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">0%</span>
+                </div>
+                <div class="text-[10px] text-gray-400 mt-1">Total de punições</div>
+                <div class="absolute -right-2 -bottom-2 opacity-10 text-purple-600 text-5xl"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            </div>
+        </section>
+
+        <!-- ABA 1: VISÃO GERAL -->
+        <div id="content-general" class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200 md:col-span-2">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Ocorrências por Função (%)</h2>
+                        <span class="text-xs text-gray-400">Absoluto e Proporção</span>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="chartCategory"></canvas>
+                    </div>
+                </div>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Distribuição Geral (%)</h2>
+                        <span class="text-xs text-gray-400">Proporção %</span>
+                    </div>
+                    <div class="h-64 flex items-center justify-center">
+                        <canvas id="chartDistribution"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider mb-4">Resumo de Assiduidade por Categoria</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase">
+                                <th class="p-3">Função</th>
+                                <th class="p-3 text-center">Colaboradores</th>
+                                <th class="p-3 text-center">Liberações</th>
+                                <th class="p-3 text-center">Folgas</th>
+                                <th class="p-3 text-center">ABS</th>
+                                <th class="p-3 text-center">Suspensões</th>
+                                <th class="p-3 text-center">Taxa ABS (%)</th>
+                                <th class="p-3 text-center">Assiduidade (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-table-body" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA 2: DETALHAMENTO NOMINAL -->
+        <div id="content-nominal" class="space-y-6 hidden">
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+                    <div>
+                        <h2 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Acompanhamento Nominal por Colaborador</h2>
+                        <p class="text-xs text-gray-400">Registros individuais e percentuais</p>
+                    </div>
+                    <div class="relative w-full md:w-64">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-gray-400 text-xs"></i>
+                        <input type="text" id="searchInput" onkeyup="renderNominalTable()" placeholder="Buscar colaborador..." class="w-full pl-9 pr-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-900 text-white uppercase text-[10px] tracking-wider">
+                                <th class="p-3 rounded-tl-lg">Nome Colaborador</th>
+                                <th class="p-3">Função</th>
+                                <th class="p-3 text-center">Liberações</th>
+                                <th class="p-3 text-center">Folgas</th>
+                                <th class="p-3 text-center">ABS</th>
+                                <th class="p-3 text-center">Suspensão</th>
+                                <th class="p-3 text-center">Taxa ABS (%)</th>
+                                <th class="p-3 text-center">Assiduidade (%)</th>
+                                <th class="p-3 text-center rounded-tr-lg">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="nominal-table-body" class="divide-y divide-gray-200 font-medium"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 py-4 mt-8 text-center text-xs text-gray-500">
+        Dashboard de Escala & Absenteísmo Operacional • Criado por: <span class="font-bold text-gray-700">Petesson Abbade</span>
+    </footer>
+
+    <!-- SCRIPT DE MANIPULAÇÃO E EXCEL -->
+    <script>
+        // Dados padrão (Setembro) caso não haja arquivo salvo
+        const defaultData = [
+            { nome: "LUCIANO LICIO DANTAS SILVA", funcao: "MOTORISTA", liberacao: 1, folga: 1, abs: 0, suspensao: 0 },
+            { nome: "DENISSON DAS VIRGENS BISPO", funcao: "MOTORISTA", liberacao: 1, folga: 1, abs: 0, suspensao: 0 },
+            { nome: "JOSE FERNANDES SANTOS", funcao: "MOTORISTA", liberacao: 2, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "DENISSON SANTOS GONZAGA", funcao: "MOTORISTA", liberacao: 0, folga: 0, abs: 3, suspensao: 0 },
+            { nome: "ANTONIO DOS SANTOS JUNIOR", funcao: "MOTORISTA", liberacao: 0, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "JOAO PAULO DOS SANTOS", funcao: "MOTORISTA", liberacao: 0, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "FILIPE SANTOS PAULINO", funcao: "MOTORISTA", liberacao: 0, folga: 1, abs: 0, suspensao: 0 },
+            { nome: "MARCIO VINICIUS SANTOS DA SILVA", funcao: "MOTORISTA", liberacao: 1, folga: 0, abs: 6, suspensao: 0 },
+            { nome: "DANILO SANTOS SILVA", funcao: "MOTORISTA", liberacao: 0, folga: 1, abs: 2, suspensao: 0 },
+            { nome: "LUIZ MARCOS DE JESUS SANTOS", funcao: "MOTORISTA", liberacao: 0, folga: 0, abs: 3, suspensao: 0 },
+            { nome: "MARCELLO DE SÃO PEDRO SANTOS", funcao: "MOTORISTA", liberacao: 1, folga: 0, abs: 1, suspensao: 0 },
+            { nome: "LUCAS EMANUEL", funcao: "MOTORISTA", liberacao: 1, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "CLEVERTON DOS SANTOS", funcao: "VAN", liberacao: 3, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "RICARDO SANTOS DA SILVA", funcao: "VAN", liberacao: 2, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "DAVID SIDROME COSTA DOS SANTOS", funcao: "VAN", liberacao: 2, folga: 1, abs: 0, suspensao: 0 },
+            { nome: "JOSE CARLOS", funcao: "VAN", liberacao: 2, folga: 1, abs: 3, suspensao: 1 },
+            { nome: "ANDREWS", funcao: "AJUDANTE", liberacao: 1, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "LUCAS DOS SANTOS", funcao: "AJUDANTE", liberacao: 1, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "RONALDO LUIZ DOS SANTOS", funcao: "AJUDANTE", liberacao: 0, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "GILSON BISPO JUNIOR", funcao: "AJUDANTE", liberacao: 1, folga: 0, abs: 2, suspensao: 0 },
+            { nome: "CLEVERTON COSTA", funcao: "AJUDANTE", liberacao: 0, folga: 1, abs: 0, suspensao: 0 },
+            { nome: "JAILSON DE LUNA OLIVEIRA", funcao: "AJUDANTE", liberacao: 0, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "MARCELO TAVARES SILVA", funcao: "AJUDANTE", liberacao: 0, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "KLUIVERT", funcao: "AJUDANTE", liberacao: 1, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "FLAVIO SEVERO DOS SANTOS", funcao: "AJUDANTE", liberacao: 2, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "CARLOS JUNIOR FREITAS", funcao: "AJUDANTE", liberacao: 1, folga: 0, abs: 0, suspensao: 0 },
+            { nome: "JOSE CARLOS ALVES SANTOS", funcao: "AJUDANTE", liberacao: 0, folga: 0, abs: 0, suspensao: 0 }
+        ];
+
+        let rawData = [];
+        let currentFilter = 'TODOS';
+        let chartCategoryInstance = null;
+        let chartDistributionInstance = null;
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('escala_data');
+            if (saved) {
+                try {
+                    rawData = JSON.parse(saved);
+                } catch(e) {
+                    rawData = defaultData;
+                }
+            } else {
+                rawData = defaultData;
+            }
+            updateDashboard();
+        });
+
+        // Função para Processar Upload do Excel
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // Pega a primeira aba
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    
+                    // Converte para JSON
+                    const json = XLSX.utils.sheet_to_json(worksheet);
+                    
+                    // Filtra e mapeia as colunas exatas da sua planilha
+                    const processed = json.map(row => {
+                        // Tenta encontrar chaves correspondentes independente de maiúsculas/minúsculas
+                        const nome = row['NOME'] || row['Nome'] || row['nome'];
+                        const funcao = row['FUNÇÃO'] || row['FUNCAO'] || row['Função'] || row['funcao'];
+                        
+                        if (!nome || !funcao || typeof nome !== 'string') return null;
+
+                        return {
+                            nome: nome.trim(),
+                            funcao: funcao.trim().toUpperCase(),
+                            liberacao: parseInt(row['LIBERAÇÃO'] || row['LIBERACAO'] || 0),
+                            folga: parseInt(row['FOLGA'] || row['Folga'] || 0),
+                            abs: parseInt(row['ABS'] || row['Abs'] || 0),
+                            suspensao: parseInt(row['SUSPENSÃO'] || row['SUSPENSAO'] || row['Suspensão'] || 0)
+                        };
+                    }).filter(item => item !== null && item.nome !== 'TOTAL' && !item.nome.includes('TOTAL'));
+
+                    if (processed.length > 0) {
+                        rawData = processed;
+                        localStorage.setItem('escala_data', JSON.stringify(rawData));
+                        updateDashboard();
+                        alert(`Planilha carregada com sucesso! ${rawData.length} colaboradores atualizados.`);
+                    } else {
+                        alert('Não foi possível encontrar registros válidos. Verifique se as colunas NOME e FUNÇÃO existem.');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('Erro ao processar o arquivo Excel. Verifique o formato.');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Troca de Abas
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white', 'shadow');
+                btn.classList.add('text-gray-400');
+            });
+            document.getElementById(`tab-${tab}`).classList.add('bg-blue-600', 'text-white', 'shadow');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
+
+            if(tab === 'general') {
+                document.getElementById('content-general').classList.remove('hidden');
+                document.getElementById('content-nominal').classList.add('hidden');
+            } else {
+                document.getElementById('content-general').classList.add('hidden');
+                document.getElementById('content-nominal').classList.remove('hidden');
+                renderNominalTable();
+            }
+        }
+
+        // Filtro por Função
+        function filterFunction(func) {
+            currentFilter = func;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('bg-slate-900', 'text-white', 'border-slate-900', 'shadow-sm');
+                btn.classList.add('bg-gray-50', 'text-gray-700', 'border-gray-300');
+            });
+            const activeBtn = document.getElementById(`btn-${func}`);
+            if(activeBtn) {
+                activeBtn.classList.add('bg-slate-900', 'text-white', 'border-slate-900', 'shadow-sm');
+                activeBtn.classList.remove('bg-gray-50', 'text-gray-700', 'border-gray-300');
+            }
+            updateDashboard();
+        }
+
+        // Atualizar Dashboard
+        function updateDashboard() {
+            const filteredData = currentFilter === 'TODOS' 
+                ? rawData 
+                : rawData.filter(d => d.funcao === currentFilter);
+
+            const count = filteredData.length;
+            const totalLib = filteredData.reduce((acc, cur) => acc + (cur.liberacao || 0), 0);
+            const totalFolga = filteredData.reduce((acc, cur) => acc + (cur.folga || 0), 0);
+            const totalAbs = filteredData.reduce((acc, cur) => acc + (cur.abs || 0), 0);
+            const totalSusp = filteredData.reduce((acc, cur) => acc + (cur.suspensao || 0), 0);
+            const totalOcorrencias = totalLib + totalFolga + totalAbs + totalSusp;
+
+            document.getElementById('kpi-count').innerText = count;
+            document.getElementById('kpi-liberacao').innerText = totalLib;
+            document.getElementById('kpi-folga').innerText = totalFolga;
+            document.getElementById('kpi-abs').innerText = totalAbs;
+            document.getElementById('kpi-suspensao').innerText = totalSusp;
+
+            document.getElementById('pct-liberacao').innerText = totalOcorrencias > 0 ? ((totalLib / totalOcorrencias) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('pct-folga').innerText = totalOcorrencias > 0 ? ((totalFolga / totalOcorrencias) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('pct-abs').innerText = totalOcorrencias > 0 ? ((totalAbs / totalOcorrencias) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('pct-suspensao').innerText = totalOcorrencias > 0 ? ((totalSusp / totalOcorrencias) * 100).toFixed(1) + '%' : '0%';
+
+            const absRate = (totalLib + totalAbs) > 0 ? ((totalAbs / (totalLib + totalAbs)) * 100).toFixed(1) + '%' : '0%';
+            document.getElementById('kpi-abs-rate').innerText = absRate;
+
+            renderSummaryTable();
+            renderCharts(filteredData, totalLib, totalFolga, totalAbs, totalSusp);
+            if (!document.getElementById('content-nominal').classList.contains('hidden')) {
+                renderNominalTable();
+            }
+        }
+
+        // Tabela Resumo
+        function renderSummaryTable() {
+            const categories = [...new Set(rawData.map(d => d.funcao))];
+            const tbody = document.getElementById('summary-table-body');
+            tbody.innerHTML = '';
+
+            categories.forEach(cat => {
+                const catData = rawData.filter(d => d.funcao === cat);
+                const count = catData.length;
+                const lib = catData.reduce((acc, cur) => acc + (cur.liberacao || 0), 0);
+                const folga = catData.reduce((acc, cur) => acc + (cur.folga || 0), 0);
+                const abs = catData.reduce((acc, cur) => acc + (cur.abs || 0), 0);
+                const susp = catData.reduce((acc, cur) => acc + (cur.suspensao || 0), 0);
+                
+                const rateABS = (lib + abs) > 0 ? ((abs / (lib + abs)) * 100).toFixed(1) : '0.0';
+                const rateAssiduidade = (100 - parseFloat(rateABS)).toFixed(1);
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="p-3 font-semibold text-gray-800">${cat}</td>
+                        <td class="p-3 text-center">${count}</td>
+                        <td class="p-3 text-center text-green-600 font-medium">${lib}</td>
+                        <td class="p-3 text-center text-amber-600 font-medium">${folga}</td>
+                        <td class="p-3 text-center text-red-600 font-bold">${abs}</td>
+                        <td class="p-3 text-center text-purple-600 font-medium">${susp}</td>
+                        <td class="p-3 text-center font-bold ${parseFloat(rateABS) > 30 ? 'text-red-600' : 'text-gray-700'}">${rateABS}%</td>
+                        <td class="p-3 text-center font-bold text-green-600">${rateAssiduidade}%</td>
+                    </tr>
+                `;
+            });
+        }
+
+        // Tabela Nominal
+        function renderNominalTable() {
+            const searchTerm = document.getElementById('searchInput') ? document.getElementById('searchInput').value.toLowerCase() : '';
+            const tbody = document.getElementById('nominal-table-body');
+            tbody.innerHTML = '';
+
+            const filtered = rawData.filter(d => {
+                const matchesFilter = currentFilter === 'TODOS' || d.funcao === currentFilter;
+                const matchesSearch = d.nome.toLowerCase().includes(searchTerm) || d.funcao.toLowerCase().includes(searchTerm);
+                return matchesFilter && matchesSearch;
+            });
+
+            filtered.forEach(d => {
+                const totalAtividades = (d.liberacao || 0) + (d.abs || 0);
+                const rateABS = totalAtividades > 0 ? ((d.abs / totalAtividades) * 100).toFixed(1) : '0.0';
+                const rateAssiduidade = (100 - parseFloat(rateABS)).toFixed(1);
+
+                let badgeClass = "bg-green-100 text-green-800 border-green-200";
+                let statusText = "Excelente";
+
+                if (parseFloat(rateABS) > 50) {
+                    badgeClass = "bg-red-100 text-red-800 border-red-200";
+                    statusText = "Crítico";
+                } else if (parseFloat(rateABS) > 0) {
+                    badgeClass = "bg-amber-100 text-amber-800 border-amber-200";
+                    statusText = "Atenção";
+                }
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100 transition-colors">
+                        <td class="p-3 font-semibold text-gray-800">${d.nome}</td>
+                        <td class="p-3 text-gray-500 text-[11px]">${d.funcao}</td>
+                        <td class="p-3 text-center text-green-600 font-bold">${d.liberacao || 0}</td>
+                        <td class="p-3 text-center text-amber-600 font-medium">${d.folga || 0}</td>
+                        <td class="p-3 text-center text-red-600 font-bold">${d.abs || 0}</td>
+                        <td class="p-3 text-center text-purple-600 font-medium">${d.suspensao || 0}</td>
+                        <td class="p-3 text-center font-bold ${parseFloat(rateABS) > 0 ? 'text-red-600' : 'text-gray-400'}">${rateABS}%</td>
+                        <td class="p-3 text-center font-bold text-green-600">${rateAssiduidade}%</td>
+                        <td class="p-3 text-center">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}">
+                                ${statusText}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        // Gráficos
+        function renderCharts(filteredData, totalLib, totalFolga, totalAbs, totalSusp) {
+            if(chartCategoryInstance) chartCategoryInstance.destroy();
+            if(chartDistributionInstance) chartDistributionInstance.destroy();
+
+            const categories = currentFilter === 'TODOS' ? [...new Set(rawData.map(d => d.funcao))] : [currentFilter];
+            
+            const libData = categories.map(c => rawData.filter(d => d.funcao === c).reduce((acc, cur) => acc + (cur.liberacao || 0), 0));
+            const folgaData = categories.map(c => rawData.filter(d => d.funcao === c).reduce((acc, cur) => acc + (cur.folga || 0), 0));
+            const absData = categories.map(c => rawData.filter(d => d.funcao === c).reduce((acc, cur) => acc + (cur.abs || 0), 0));
+
+            const ctx1 = document.getElementById('chartCategory').getContext('2d');
+            chartCategoryInstance = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: categories,
+                    datasets: [
+                        { label: 'Liberações', data: libData, backgroundColor: '#22c55e' },
+                        { label: 'Folgas', data: folgaData, backgroundColor: '#f59e0b' },
+                        { label: 'ABS', data: absData, backgroundColor: '#ef4444' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const val = context.raw;
+                                    const totalGroup = libData[context.dataIndex] + folgaData[context.dataIndex] + absData[context.dataIndex];
+                                    const pct = totalGroup > 0 ? ((val / totalGroup) * 100).toFixed(1) : 0;
+                                    return `${context.dataset.label}: ${val} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const ctx2 = document.getElementById('chartDistribution').getContext('2d');
+            chartDistributionInstance = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Liberações', 'Folgas', 'ABS', 'Suspensão'],
+                    datasets: [{
+                        data: [totalLib, totalFolga, totalAbs, totalSusp],
+                        backgroundColor: ['#22c55e', '#f59e0b', '#ef4444', '#a855f7']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const val = context.raw;
+                                    const sum = totalLib + totalFolga + totalAbs + totalSusp;
+                                    const pct = sum > 0 ? ((val / sum) * 100).toFixed(1) : 0;
+                                    return `${context.label}: ${val} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
